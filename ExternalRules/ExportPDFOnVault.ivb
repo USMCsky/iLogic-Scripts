@@ -1,0 +1,81 @@
+' ============================================================================
+' ExportPDFOnVault.ivb
+' External iLogic Rule for Autodesk Inventor
+' ============================================================================
+' 
+' PURPOSE:
+'   Automatically exports a PDF copy of the drawing when it is saved to vault.
+'   Useful for maintaining an up-to-date PDF documentation set alongside
+'   vault-managed drawing files.
+'
+' USAGE:
+'   1. Add as an External Rule in Inventor
+'   2. Configure trigger: File > Save (vault save event)
+'   3. Customize PDF export path and options as needed
+'
+' REQUIREMENTS:
+'   - Inventor 2020+
+'   - iLogic module
+'   - Active Inventor drawing document (not parts or assemblies)
+'
+' ============================================================================
+
+Sub Main()
+    Try
+        Dim oDoc As Document = ThisApplication.ActiveDocument
+        
+        ' Validate document type
+        If oDoc.DocumentType <> kDrawingDocumentObject Then
+            MsgBox("PDF Export Error: This rule only works with drawing documents.", _
+                   vbCritical, "iLogic - Export PDF On Vault")
+            Exit Sub
+        End If
+        
+        Dim oDrawing As DrawingDocument = oDoc
+        
+        ' ====================================================================
+        ' CONFIGURE PDF EXPORT PATH
+        ' ====================================================================
+        ' Option 1: Export to same directory as drawing file
+        Dim drawingDir As String = System.IO.Path.GetDirectoryName(oDoc.FullFileName)
+        Dim drawingName As String = System.IO.Path.GetFileNameWithoutExtension(oDoc.FileName)
+        Dim pdfPath As String = drawingDir & "\" & drawingName & ".pdf"
+        
+        ' Option 2: Export to a specific vault folder
+        ' Dim pdfPath As String = "C:\Vault\PDFs\" & drawingName & ".pdf"
+        
+        ' ====================================================================
+        ' CREATE TRANSLATION CONTEXT FOR PDF EXPORT
+        ' ====================================================================
+        Dim oContext As TranslationContext = ThisApplication.TranslationManager.CreateTranslationContext()
+        oContext.Type = IOMechanicsConstants.kFileSaveAsType
+        
+        ' ====================================================================
+        ' CONFIGURE PDF EXPORT OPTIONS
+        ' ====================================================================
+        Dim oOptions As NameValueMap = ThisApplication.TranslationManager.CreateNameValueMap()
+        
+        ' Print settings
+        oOptions.Value("All_Color_AS_Black") = 0              ' 0=Color, 1=Black & White
+        oOptions.Value("Remove_Line_Weights") = 0             ' 0=Keep weights, 1=Remove
+        oOptions.Value("Vector_Resolution") = 400             ' DPI resolution
+        oOptions.Value("Print_All_Sheets") = 1                ' 1=All sheets, 0=Active sheet only
+        
+        ' Page setup
+        oOptions.Value("Page_Orientation") = 0                ' 0=Landscape, 1=Portrait
+        oOptions.Value("Scale_Percent") = 100                 ' 100=Fit to page
+        
+        ' ====================================================================
+        ' EXECUTE PDF EXPORT
+        ' ====================================================================
+        ThisApplication.TranslationManager.Translate(oDoc, oContext, _
+                                                     "PDF.translate", pdfPath, oOptions)
+        
+        ' Optional: Show success message (comment out for silent operation)
+        ' MsgBox("PDF exported successfully:" & vbCrLf & pdfPath, _
+        '        vbInformation, "iLogic - Export PDF On Vault")
+        
+    Catch ex As Exception
+        MsgBox("PDF Export Error: " & ex.Message, vbCritical, "iLogic - Export PDF On Vault")
+    End Try
+End Sub
