@@ -1,0 +1,51 @@
+External rules in Inventor allow you to trigger custom iLogic scripts based on vault lifecycle events (save, check-in, release, etc.).
+
+Step-by-Step Setup:
+1. Prepare Your iLogic Script
+Your ExportPDFOnVault.ivb script is ready to use. Make sure it's in your Inventor project folder or user library.
+
+2. Configure the Vault Lifecycle State (if needed)
+In Autodesk Vault:
+
+Go to Administration > Vault Settings > Lifecycle States
+Define the state(s) where you want the PDF export to trigger (usually on "Released" or "Submitted for Review")
+3. Add the External Rule via Vault Admin
+In Autodesk Vault Admin Console:
+
+Navigate to Automation > External Rules
+Click New External Rule
+Configure:
+Name: "Export PDF on Save"
+Script: Browse to your ExportPDFOnVault.ivb
+Trigger Event: Select from:
+File Save
+State Change
+Check-In
+Release
+Entity Types: Drawing (*.idw)
+Condition (optional): Filter by file type, state, etc.
+4. Set Permissions
+Run As: Service account with proper vault rights
+Error Handling: Choose to fail silently or log errors
+5. Test the Rule
+Open a drawing in Inventor
+Save it to vault
+Monitor the vault logs for execution results
+Verify the PDF was created in the configured directory
+Troubleshooting Tips:
+Issue	Solution
+Script not executing	Check vault logs at C:\Program Files\Autodesk\Vault Server\Logs\
+Permission denied on PDF export	Run vault service with elevated privileges
+PDF path not found	Use absolute path or relative to vault workspace
+No PDF created	Verify script syntax and Inventor version compatibility
+Alternative: Direct Rule in Inventor
+If you want the rule to run every time you save locally (not just in vault):
+
+In Inventor: Tools > iLogic > Edit Module
+Paste your script
+Add an event trigger via Tools > iLogic > External Rules
+Would you like help with:
+
+Modifying the PDF export path?
+Adding more sophisticated triggers (e.g., only for certain drawing types)?
+Creating additional automation rules?
