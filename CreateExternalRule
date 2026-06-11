@@ -6,12 +6,12 @@ Your ExportPDFOnVault.ivb script is ready to use. Make sure it's in your Invento
 
 2. Configure the Vault Lifecycle State (if needed)
 In Autodesk Vault:
-
-Go to Administration > Vault Settings > Lifecycle States
+(this will be an issue)
+**Go to Administration > Vault Settings > Lifecycle States**
 Define the state(s) where you want the PDF export to trigger (usually on "Released" or "Submitted for Review")
+
 3. Add the External Rule via Vault Admin
 In Autodesk Vault Admin Console:
-
 Navigate to Automation > External Rules
 Click New External Rule
 Configure:
@@ -42,9 +42,14 @@ Permission denied on PDF export	Run vault service with elevated privileges
 PDF path not found	Use absolute path or relative to vault workspace
 No PDF created	Verify script syntax and Inventor version compatibility
 
+Jackie - We will probably need to do the following.
+************************************************************************
+************************************************************************
 Alternative: Direct Rule in Inventor
 If you want the rule to run every time you save locally (not just in vault):
 
 In Inventor: Tools > iLogic > Edit Module
 Paste your script
 Add an event trigger via Tools > iLogic > External Rules
+************************************************************************
+************************************************************************
