@@ -1,81 +1,255 @@
 ' ============================================================================
-' ExportPDFOnVault.ivb
+' ExportPDFOnSave.iLogic
 ' External iLogic Rule for Autodesk Inventor
 ' ============================================================================
-' 
-' PURPOSE:
-'   Automatically exports a PDF copy of the drawing when it is saved to vault.
-'   Useful for maintaining an up-to-date PDF documentation set alongside
-'   vault-managed drawing files.
 '
-' USAGE:
-'   1. Add as an External Rule in Inventor
-'   2. Configure trigger: File > Save (vault save event)
-'   3. Customize PDF export path and options as needed
+' PURPOSE:
+'   Exports a PDF copy of the active Inventor drawing whenever the rule is run.
+'
+'   In a Vault environment, this rule is typically assigned to an Inventor
+'   save-related iLogic Event Trigger. This can help ensure that a current PDF
+'   copy exists in the user's local Vault workspace before the drawing is
+'   checked into Vault.
+'
+' IMPORTANT VAULT NOTE:
+'   This rule does not directly detect a Vault check-in event and does not
+'   automatically add or check the PDF into Vault.
+'
+'   Without Vault admin-level event customization or Vault API automation, this
+'   rule should be considered a client-side save automation. It creates or
+'   updates the PDF file locally. The PDF must still be added and checked into
+'   Vault by the normal Vault workflow if it is intended to be Vault-managed.
+'
+' RECOMMENDED TRIGGER:
+'   Configure this rule as an External Rule and assign it to an iLogic Event
+'   Trigger such as:
+'
+'       - After Save Document
+'
+'   "After Save Document" is recommended because the drawing will already have
+'   a valid file name and path before the PDF path is generated.
 '
 ' REQUIREMENTS:
-'   - Inventor 2020+
-'   - iLogic module
-'   - Active Inventor drawing document (not parts or assemblies)
+'   - Autodesk Inventor 2020 or newer
+'   - iLogic enabled
+'   - Active document must be an Inventor drawing file
+'   - PDF Translator Add-In must be available and loaded
+'   - User must have write permission to the target PDF folder
+'
+' OUTPUT:
+'   By default, the PDF is exported to the same folder as the drawing using the
+'   same base file name.
+'
+'   Example:
+'       C:\VaultWorkspace\Designs\Part123.idw
+'       C:\VaultWorkspace\Designs\Part123.pdf
+'
+' CUSTOMIZATION:
+'   To export PDFs to a dedicated folder, modify the "PDF EXPORT PATH" section.
 '
 ' ============================================================================
 
 Sub Main()
+
     Try
+
+        ' --------------------------------------------------------------------
+        ' Get the active Inventor document.
+        ' --------------------------------------------------------------------
+        ' This rule is intended to run from an Inventor drawing document.
+        ' If a part, assembly, presentation, or other document type is active,
+        ' the rule exits without attempting to export a PDF.
+        ' --------------------------------------------------------------------
+
         Dim oDoc As Document = ThisApplication.ActiveDocument
-        
-        ' Validate document type
-        If oDoc.DocumentType <> kDrawingDocumentObject Then
-            MsgBox("PDF Export Error: This rule only works with drawing documents.", _
-                   vbCritical, "iLogic - Export PDF On Vault")
+
+        If oDoc Is Nothing Then
+            MsgBox("PDF Export Error: No active document was found.", _
+                   vbCritical, "iLogic - Export PDF")
             Exit Sub
         End If
-        
-        Dim oDrawing As DrawingDocument = oDoc
-        
+
+        If oDoc.DocumentType <> DocumentTypeEnum.kDrawingDocumentObject Then
+            MsgBox("PDF Export Error: This rule only works with drawing documents.", _
+                   vbCritical, "iLogic - Export PDF")
+            Exit Sub
+        End If
+
+        Dim oDrawing As DrawingDocument = CType(oDoc, DrawingDocument)
+
+
+        ' --------------------------------------------------------------------
+        ' Confirm that the drawing has been saved.
+        ' --------------------------------------------------------------------
+        ' A PDF path cannot be reliably generated from an unsaved drawing because
+        ' the drawing does not yet have a valid FullFileName.
+        '
+        ' This is another reason why this rule should normally be assigned to
+        ' the "After Save Document" event trigger.
+        ' --------------------------------------------------------------------
+
+        If String.IsNullOrWhiteSpace(oDrawing.FullFileName) Then
+            MsgBox("PDF Export Error: The drawing must be saved before a PDF can be exported.", _
+                   vbCritical, "iLogic - Export PDF")
+            Exit Sub
+        End If
+
+
         ' ====================================================================
-        ' CONFIGURE PDF EXPORT PATH
+        ' PDF EXPORT PATH
         ' ====================================================================
-        ' Option 1: Export to same directory as drawing file
-        Dim drawingDir As String = System.IO.Path.GetDirectoryName(oDoc.FullFileName)
-        Dim drawingName As String = System.IO.Path.GetFileNameWithoutExtension(oDoc.FileName)
-        Dim pdfPath As String = drawingDir & "\" & drawingName & ".pdf"
-        
-        ' Option 2: Export to a specific vault folder
-        ' Dim pdfPath As String = "C:\Vault\PDFs\" & drawingName & ".pdf"
-        
+        ' Default behavior:
+        '   Export the PDF to the same folder as the drawing.
+        '
+        ' Vault workspace behavior:
+        '   If the drawing is saved in a local Vault workspace, the PDF will also
+        '   be created in that local workspace folder.
+        '
+        ' Important:
+        '   Creating the PDF in the Vault workspace does not automatically add or
+        '   check the PDF into Vault. Use the normal Vault workflow if the PDF
+        '   also needs to be Vault-managed.
         ' ====================================================================
-        ' CREATE TRANSLATION CONTEXT FOR PDF EXPORT
+
+        Dim drawingDir As String
+        Dim drawingName As String
+        Dim pdfPath As String
+
+        drawingDir = System.IO.Path.GetDirectoryName(oDrawing.FullFileName)
+        drawingName = System.IO.Path.GetFileNameWithoutExtension(oDrawing.FullFileName)
+
+        pdfPath = System.IO.Path.Combine(drawingDir, drawingName & ".pdf")
+
+
+        ' --------------------------------------------------------------------
+        ' Optional alternate PDF location.
+        ' --------------------------------------------------------------------
+        ' To export all PDFs to a dedicated local folder, comment out the
+        ' pdfPath assignment above and use a controlled path like the example
+        ' below.
+        '
+        ' Make sure the folder exists and that users have write permission.
+        '
+        ' Example:
+        '   pdfPath = System.IO.Path.Combine("C:\VaultWorkspace\PDFs", drawingName & ".pdf")
+        ' --------------------------------------------------------------------
+
+
         ' ====================================================================
-        Dim oContext As TranslationContext = ThisApplication.TranslationManager.CreateTranslationContext()
-        oContext.Type = IOMechanicsConstants.kFileSaveAsType
-        
+        ' GET INVENTOR PDF TRANSLATOR ADD-IN
+        ' ====================================================================
+        ' Inventor exports PDFs through the PDF Translator Add-In.
+        '
+        ' The GUID below is the standard Inventor PDF Translator Add-In ID.
+        ' If the add-in is unavailable or not loaded, the export will fail.
+        ' ====================================================================
+
+        Dim pdfAddIn As TranslatorAddIn
+
+        pdfAddIn = ThisApplication.ApplicationAddIns.ItemById( _
+            "{0AC6FD96-2F4D-42CE-8BE0-8AEA580399E4}")
+
+
+        ' ====================================================================
+        ' CREATE PDF EXPORT CONTEXT, OPTIONS, AND OUTPUT TARGET
+        ' ====================================================================
+        ' TranslationContext:
+        '   Defines the type of export operation.
+        '
+        ' NameValueMap:
+        '   Stores export options recognized by the PDF translator.
+        '
+        ' DataMedium:
+        '   Defines the target output file path for the exported PDF.
+        ' ====================================================================
+
+        Dim oContext As TranslationContext
+        Dim oOptions As NameValueMap
+        Dim oDataMedium As DataMedium
+
+        oContext = ThisApplication.TransientObjects.CreateTranslationContext()
+        oContext.Type = IOMechanicsEnum.kFileBrowseIOMechanism
+
+        oOptions = ThisApplication.TransientObjects.CreateNameValueMap()
+        oDataMedium = ThisApplication.TransientObjects.CreateDataMedium()
+
+
         ' ====================================================================
         ' CONFIGURE PDF EXPORT OPTIONS
         ' ====================================================================
-        Dim oOptions As NameValueMap = ThisApplication.TranslationManager.CreateNameValueMap()
-        
-        ' Print settings
-        oOptions.Value("All_Color_AS_Black") = 0              ' 0=Color, 1=Black & White
-        oOptions.Value("Remove_Line_Weights") = 0             ' 0=Keep weights, 1=Remove
-        oOptions.Value("Vector_Resolution") = 400             ' DPI resolution
-        oOptions.Value("Print_All_Sheets") = 1                ' 1=All sheets, 0=Active sheet only
-        
-        ' Page setup
-        oOptions.Value("Page_Orientation") = 0                ' 0=Landscape, 1=Portrait
-        oOptions.Value("Scale_Percent") = 100                 ' 100=Fit to page
-        
+        ' These options control how the drawing is written to PDF.
+        '
+        ' All_Color_AS_Black:
+        '   0 = Preserve drawing colors
+        '   1 = Convert all colors to black
+        '
+        ' Remove_Line_Weights:
+        '   0 = Preserve line weights
+        '   1 = Remove line weights
+        '
+        ' Vector_Resolution:
+        '   Resolution used for vector output.
+        '
+        ' Sheet_Range:
+        '   kPrintAllSheets exports all sheets in the drawing.
         ' ====================================================================
-        ' EXECUTE PDF EXPORT
+
+        If pdfAddIn.HasSaveCopyAsOptions(oDrawing, oContext, oOptions) Then
+
+            oOptions.Value("All_Color_AS_Black") = 0
+            oOptions.Value("Remove_Line_Weights") = 0
+            oOptions.Value("Vector_Resolution") = 400
+            oOptions.Value("Sheet_Range") = PrintRangeEnum.kPrintAllSheets
+
+        End If
+
+
         ' ====================================================================
-        ThisApplication.TranslationManager.Translate(oDoc, oContext, _
-                                                     "PDF.translate", pdfPath, oOptions)
-        
-        ' Optional: Show success message (comment out for silent operation)
+        ' EXPORT THE PDF
+        ' ====================================================================
+        ' If a PDF with the same file name already exists, Inventor will normally
+        ' overwrite it, provided the file is not open, locked, read-only, or
+        ' restricted by folder permissions.
+        '
+        ' Common causes of failure:
+        '   - PDF is open in Adobe Acrobat or another viewer
+        '   - User does not have write permission to the folder
+        '   - File is read-only
+        '   - Vault workspace permissions prevent local overwrite
+        '   - PDF Translator Add-In is unavailable
+        ' ====================================================================
+
+        oDataMedium.FileName = pdfPath
+
+        pdfAddIn.SaveCopyAs(oDrawing, oContext, oOptions, oDataMedium)
+
+
+        ' --------------------------------------------------------------------
+        ' Optional success message.
+        ' --------------------------------------------------------------------
+        ' For production use, this message is usually commented out so the save
+        ' process remains silent.
+        '
+        ' Uncomment for testing or troubleshooting.
+        ' --------------------------------------------------------------------
+
         ' MsgBox("PDF exported successfully:" & vbCrLf & pdfPath, _
-        '        vbInformation, "iLogic - Export PDF On Vault")
-        
+        '        vbInformation, "iLogic - Export PDF")
+
+
     Catch ex As Exception
-        MsgBox("PDF Export Error: " & ex.Message, vbCritical, "iLogic - Export PDF On Vault")
+
+        ' --------------------------------------------------------------------
+        ' Error handling.
+        ' --------------------------------------------------------------------
+        ' Display the error so the user understands why the PDF was not created.
+        ' In production, consider logging this message to a text file instead of
+        ' interrupting the user with a message box on every save.
+        ' --------------------------------------------------------------------
+
+        MsgBox("PDF Export Error: " & ex.Message, _
+               vbCritical, "iLogic - Export PDF")
+
     End Try
+
 End Sub
